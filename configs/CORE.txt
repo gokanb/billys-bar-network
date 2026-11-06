@@ -1,0 +1,184 @@
+! =====================================================================
+! CORE - Cisco Catalyst 3560-24PS (Layer 3 core switch)
+! Billy's Bar & Grill - Packet Tracer lab
+! Rebuilt from the commands used during the build.
+! NOTE: passwords shown are LAB-ONLY values. Never publish real ones.
+! =====================================================================
+enable
+configure terminal
+hostname CORE
+no ip domain-lookup
+ip routing
+!
+! ---------- VLANs ----------
+vlan 10
+ name MGMT
+vlan 20
+ name POS
+vlan 30
+ name STAFF
+vlan 40
+ name SERVERS
+vlan 50
+ name CCTV
+vlan 60
+ name STAFF-WIFI
+vlan 70
+ name GUEST-WIFI
+vlan 99
+ name NATIVE
+vlan 999
+ name BLACKHOLE
+exit
+!
+! ---------- Trunks to access switches ----------
+interface range fa0/1 - 3
+ description TRUNK-TO-ACCESS
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk native vlan 99
+ switchport trunk allowed vlan 10,20,30,40,50,60,70,99
+!
+! ---------- Servers ----------
+interface range fa0/10 - 12
+ description SERVERS
+ switchport mode access
+ switchport access vlan 40
+!
+! ---------- WLC trunk (native 10 = WLC management untagged) ----------
+interface fa0/20
+ description TRUNK-TO-WLC
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk native vlan 10
+ switchport trunk allowed vlan 10,60,70
+!
+! ---------- Routed uplink to firewall ----------
+interface g0/1
+ description TO-FW
+ no switchport
+ ip address 10.10.1.146 255.255.255.252
+ no shutdown
+!
+! ---------- SVIs (default gateways) ----------
+interface vlan 10
+ description MGMT-GW
+ ip address 10.10.1.113 255.255.255.240
+ ip helper-address 10.10.1.130
+ no shutdown
+interface vlan 20
+ description POS-GW
+ ip address 10.10.1.33 255.255.255.224
+ ip helper-address 10.10.1.130
+ ip access-group POS-IN in
+ no shutdown
+interface vlan 30
+ description STAFF-GW
+ ip address 10.10.1.65 255.255.255.224
+ ip helper-address 10.10.1.130
+ ip access-group STAFF-IN in
+ no shutdown
+interface vlan 40
+ description SERVERS-GW
+ ip address 10.10.1.129 255.255.255.248
+ no shutdown
+interface vlan 50
+ description CCTV-GW
+ ip address 10.10.1.97 255.255.255.240
+ ip helper-address 10.10.1.130
+ ip access-group CCTV-IN in
+ no shutdown
+interface vlan 60
+ description STAFF-WIFI-GW
+ ip address 10.10.1.1 255.255.255.224
+ ip helper-address 10.10.1.130
+ ip access-group STAFFWIFI-IN in
+ no shutdown
+interface vlan 70
+ description GUEST-WIFI-GW
+ ip address 10.10.0.1 255.255.255.0
+ ip helper-address 10.10.1.130
+ ip access-group GUEST-IN in
+ no shutdown
+exit
+!
+! ---------- Default route to firewall ----------
+ip route 0.0.0.0 0.0.0.0 10.10.1.145
+!
+! ---------- ACLs ----------
+ip access-list extended POS-IN
+ remark Allow DHCP
+ permit udp any any eq 67
+ remark Allow DNS and NTP to servers
+ permit udp 10.10.1.32 0.0.0.31 host 10.10.1.130 eq 53
+ permit udp 10.10.1.32 0.0.0.31 host 10.10.1.132 eq 123
+ remark Block all internal networks
+ deny ip any 10.10.0.0 0.0.1.255
+ remark Allow internet for payment processing
+ permit ip 10.10.1.32 0.0.0.31 any
+exit
+ip access-list extended CCTV-IN
+ remark Allow DHCP
+ permit udp any any eq 67
+ remark NVR can talk to staff (manager viewing footage)
+ permit ip host 10.10.1.98 10.10.1.64 0.0.0.31
+ remark Block everything else - no internet for cameras
+ deny ip any any
+exit
+ip access-list extended STAFF-IN
+ remark MANAGER is the admin PC - can manage network devices
+ permit ip host 10.10.1.70 10.10.1.112 0.0.0.15
+ deny ip any 10.10.1.112 0.0.0.15
+ remark Block staff from POS
+ deny ip any 10.10.1.32 0.0.0.31
+ remark Allow NVR footage, block cameras
+ permit ip any host 10.10.1.98
+ deny ip any 10.10.1.96 0.0.0.15
+ permit ip any any
+exit
+ip access-list extended STAFFWIFI-IN
+ permit udp any any eq 67
+ deny ip any 10.10.1.112 0.0.0.15
+ deny ip any 10.10.1.32 0.0.0.31
+ deny ip any 10.10.1.96 0.0.0.15
+ permit ip any any
+exit
+ip access-list extended GUEST-IN
+ permit udp any any eq 67
+ permit udp 10.10.0.0 0.0.0.255 host 10.10.1.130 eq 53
+ deny ip any 10.10.0.0 0.0.1.255
+ permit ip 10.10.0.0 0.0.0.255 any
+exit
+!
+! ---------- Unused ports -> BLACKHOLE ----------
+interface range fa0/4 - 9 , fa0/13 - 19 , fa0/21 - 24 , g0/2
+ description UNUSED
+ switchport mode access
+ switchport access vlan 999
+ shutdown
+exit
+!
+! ---------- Management hardening ----------
+enable secret B1llys$Enable
+username admin privilege 15 secret B1llys$Admin
+service password-encryption
+ip domain-name billysbar.local
+crypto key generate rsa general-keys modulus 2048
+ip ssh version 2
+line console 0
+ password B1llys$Con
+ login
+ exec-timeout 10 0
+line vty 0 15
+ login local
+ transport input ssh
+ exec-timeout 10 0
+exit
+banner motd #Authorized access only - Billy's Bar network#
+!
+! ---------- Logging / time ----------
+service timestamps log datetime msec
+logging host 10.10.1.132
+ntp server 10.10.1.132
+end
+copy running-config startup-config

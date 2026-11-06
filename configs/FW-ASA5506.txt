@@ -1,0 +1,73 @@
+! =====================================================================
+! FW - Cisco ASA 5506-X (edge firewall)
+! Billy's Bar & Grill - Packet Tracer lab
+! NOTE: passwords shown are LAB-ONLY values.
+!
+! Zones:  outside (0)  ->  dmz (50)  ->  inside (100)
+! Higher -> lower is allowed by default. Lower -> higher needs an ACL.
+! =====================================================================
+enable
+configure terminal
+hostname FW
+enable password B1llys$FW
+!
+! ---------- Interfaces ----------
+interface g1/1
+ nameif outside
+ security-level 0
+ ip address 203.0.113.2 255.255.255.248
+ no shutdown
+interface g1/2
+ nameif inside
+ security-level 100
+ ip address 10.10.1.145 255.255.255.252
+ no shutdown
+interface g1/3
+ nameif dmz
+ security-level 50
+ ip address 10.10.1.137 255.255.255.248
+ no shutdown
+exit
+!
+! ---------- Routing ----------
+route outside 0.0.0.0 0.0.0.0 203.0.113.1
+route inside 10.10.0.0 255.255.254.0 10.10.1.146
+!
+! ---------- NAT ----------
+! PAT: every inside host shares the outside interface IP
+object network INSIDE-NET
+ subnet 10.10.0.0 255.255.254.0
+ nat (inside,outside) dynamic interface
+exit
+! 1-to-1 static NAT for public DMZ servers
+! (PT's ASA rejects "static interface service tcp ..." port forwarding,
+!  so each DMZ server gets its own public IP from the /29 block)
+object network DMZ-WEB
+ host 10.10.1.138
+ nat (dmz,outside) static 203.0.113.3
+exit
+object network DMZ-MAIL
+ host 10.10.1.139
+ nat (dmz,outside) static 203.0.113.4
+exit
+!
+! ---------- Outside ACL: only what the public needs ----------
+! ACLs reference the REAL (inside) IP - ASA 8.3+ behaviour
+access-list OUTSIDE-IN extended permit icmp any any echo-reply
+access-list OUTSIDE-IN extended permit tcp any host 10.10.1.138 eq www
+access-list OUTSIDE-IN extended permit tcp any host 10.10.1.139 eq smtp
+access-group OUTSIDE-IN in interface outside
+!
+! ---------- Stateful inspection ----------
+class-map inspection_default
+ match default-inspection-traffic
+exit
+policy-map global_policy
+ class inspection_default
+  inspect icmp
+  inspect http
+  exit
+ exit
+service-policy global_policy global
+end
+write memory

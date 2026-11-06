@@ -1,0 +1,109 @@
+! =====================================================================
+! SW-BOH - Cisco Catalyst 2960-24TT (access switch, kitchen + office / back of house)
+! Billy's Bar & Grill - Packet Tracer lab
+! NOTE: passwords shown are LAB-ONLY values.
+! =====================================================================
+enable
+configure terminal
+hostname SW-BOH
+no ip domain-lookup
+!
+vlan 10
+ name MGMT
+vlan 20
+ name POS
+vlan 30
+ name STAFF
+vlan 40
+ name SERVERS
+vlan 50
+ name CCTV
+vlan 60
+ name STAFF-WIFI
+vlan 70
+ name GUEST-WIFI
+vlan 99
+ name NATIVE
+vlan 999
+ name BLACKHOLE
+exit
+!
+! ---------- Uplink trunk to CORE ----------
+interface g0/1
+ description TRUNK-TO-CORE
+ switchport mode trunk
+ switchport trunk native vlan 99
+ switchport trunk allowed vlan 10,20,30,40,50,60,70,99
+!
+! ---------- Access ports ----------
+interface fa0/1
+ description KITCHEN-PRN
+ switchport mode access
+ switchport access vlan 20
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+interface range fa0/5 - 6
+ description MANAGER-OFFICE
+ switchport mode access
+ switchport access vlan 30
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+interface range fa0/10 - 11
+ description CAMERAS
+ switchport mode access
+ switchport access vlan 50
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+interface fa0/12
+ description NVR
+ switchport mode access
+ switchport access vlan 50
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+!
+! ---------- Unused ports -> BLACKHOLE ----------
+interface range fa0/2 - 4 , fa0/7 - 9 , fa0/13 - 24 , g0/2
+ description UNUSED
+ switchport mode access
+ switchport access vlan 999
+ shutdown
+exit
+!
+! ---------- Management IP (VLAN 10) ----------
+interface vlan 10
+ ip address 10.10.1.116 255.255.255.240
+ no shutdown
+exit
+ip default-gateway 10.10.1.113
+!
+! ---------- Management hardening ----------
+enable secret B1llys$Enable
+username admin privilege 15 secret B1llys$Admin
+service password-encryption
+ip domain-name billysbar.local
+crypto key generate rsa general-keys modulus 2048
+ip ssh version 2
+line console 0
+ password B1llys$Con
+ login
+ exec-timeout 10 0
+line vty 0 15
+ login local
+ transport input ssh
+ exec-timeout 10 0
+exit
+banner motd #Authorized access only - Billy's Bar network#
+!
+service timestamps log datetime msec
+logging host 10.10.1.132
+ntp server 10.10.1.132
+end
+copy running-config startup-config
